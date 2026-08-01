@@ -2,6 +2,7 @@ Introduction
 introintro
 
 Method
+methodmethod
 
 Results
 resultsresults
