@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>呼吸カウント課題（BCT）</title>
+
+  <!-- Cognition.run には、このHTMLファイルをそのまま登録します。 -->
+  <script src="https://unpkg.com/jspsych@8.2.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@2.1.0"></script>
+  <link rel="stylesheet" href="https://unpkg.com/jspsych@8.2.3/css/jspsych.css">
+
+  <style>
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { margin: 0; min-height: 100%; font-family: "Yu Gothic", Meiryo, sans-serif; }
+    body { background: #000; color: #fff; }
+    button, input { font: inherit; }
+
+    #start-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #fff; color: #111; }
+    .start-panel { width: min(520px, 100%); padding: 32px; border: 1px solid #ccc; border-radius: 12px; background: #f7f7f7; }
+    .start-panel h1 { margin: 0 0 12px; }
+    .start-panel label { display: block; margin: 24px 0 8px; font-weight: bold; }
+    .start-panel input { width: 100%; padding: 10px; border: 1px solid #aaa; border-radius: 6px; }
+    .start-button { margin-top: 20px; padding: 11px 18px; border: 0; border-radius: 7px; background: #111; color: #fff; cursor: pointer; }
+
+    .screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px; background: #000; color: #fff; }
+    .blank { min-height: 100vh; background: #000; }
+    .instruction { width: min(760px, 100%); padding: 36px; border: 1px solid #444; border-radius: 16px; background: #181d26; text-align: left; font-size: 20px; line-height: 1.75; }
+    .instruction h1 { margin: 0 0 20px; font-size: 32px; }
+    .instruction .step { color: #8ec5ff; font-size: 13px; font-weight: bold; }
+    .note { padding: 12px 15px; border-left: 4px solid #4dabf7; background: #222d3a; }
+    kbd { padding: 3px 9px; border-radius: 6px; background: #f4f7fb; color: #111; font-weight: bold; }
+    .next { margin-top: 24px; padding-top: 16px; border-top: 1px solid #444; text-align: right; color: #ccd5df; }
+
+    .illusion { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; background: #000; }
+    .illusion canvas { width: min(600px, 92vw); height: auto; background: #ddd; border-radius: 8px; }
+    .controls { width: min(600px, 92vw); padding: 16px; border-radius: 8px; background: #f7f7f7; color: #111; }
+    .control { display: grid; grid-template-columns: 130px 1fr 75px; gap: 10px; align-items: center; margin: 8px 0; }
+    .control input[type="range"] { width: 100%; }
+
+    .results { min-height: 100vh; padding: 32px 20px; background: #fff; color: #111; }
+    .results-panel { width: min(820px, 100%); margin: auto; padding: 28px; border: 1px solid #ccc; border-radius: 12px; background: #f7f7f7; }
+    .results table { width: 100%; margin: 20px 0; border-collapse: collapse; background: #fff; }
+    .results th, .results td { padding: 9px 12px; border: 1px solid #ccc; text-align: left; }
+    .results th { width: 55%; }
+    .download-button { padding: 11px 18px; border: 0; border-radius: 7px; background: #111; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <section id="start-screen">
+    <div class="start-panel">
+      <h1>呼吸カウント課題（BCT）</h1>
+      <p>参加者IDを入力して、実験を開始してください。</p>
+      <label for="participant-id">参加者ID</label>
+      <input id="participant-id" type="text" placeholder="例：S001" autocomplete="off">
+      <button id="start-button" class="start-button">実験を開始する</button>
+    </div>
+  </section>
+  <main id="jspsych-target"></main>
+
+  <script>
+    "use strict";
+
+    // ------------------------------------------------------------
+    // 1. 設定と実験中に記録するデータ
+    // ------------------------------------------------------------
+    const KEYS = { normal: "ArrowLeft", target: "ArrowRight", lost: "Space" };
+    const config = {
+      participant_id: "anonymous",
+      savecode: "BCT",
+      total_breath_count_target: 20,
+      illusion_interval_count: 5,
+      cycle_target_count: 5,
+      keys: KEYS,
+      html_filename: "bct_mullerlyer_cognition_simple.index.html",
+      platform: "cognition.run"
+    };
+    let jsPsych;
+    let taskStartTime;
+    let taskStartISO;
+    let keyHandler = null;
+    let rawEvents = [];
+    let illusionResponses = [];
+
+    const $ = (id) => document.getElementById(id);
+    const elapsedSeconds = () => Number(((performance.now() - taskStartTime) / 1000).toFixed(6));
+    function normalizeKey(key) {
+      const name = String(key || "").toLowerCase();
+      if (name === " " || name === "space" || name === "spacebar") return "Space";
+      if (name === "arrowleft" || name === "left") return "ArrowLeft";
+      if (name === "arrowright" || name === "right") return "ArrowRight";
+      return key;
+    }
+
+    // ------------------------------------------------------------
+    // 2. 説明画面
+    // ------------------------------------------------------------
+    function instructionTrial(page, title, body, lastPage = false) {
+      // jsPsychではSpaceキーを空白文字で指定する。
+      const nextKey = lastPage ? " " : "ArrowRight";
+      const nextLabel = lastPage ? "Spaceキーで開始" : "右矢印キーで次へ";
+      return {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: `<div class="screen"><section class="instruction">
+          <div class="step">STEP ${page} / 5</div><h1>${title}</h1>
+          ${body}<div class="next"><kbd>${nextLabel}</kbd></div>
+        </section></div>`,
+        choices: [nextKey],
+        data: { trial_type_custom: "instruction", instruction_page: page }
+      };
+    }
+
+    function instructionTrials() {
+      const target = config.cycle_target_count;
+      return [
+        instructionTrial(1, "呼吸に注意を向けます",
+          `<p>鼻の下から上唇の上あたりで、息が出入りする感覚に気づくようにしてください。</p>
+           <p class="note"><strong>呼吸をコントロールする必要はありません。</strong><br>いつもどおり、自然に呼吸してください。</p>`),
+        instructionTrial(2, "注意がそれても大丈夫です",
+          `<p>途中で、注意が呼吸からそれていることに気づくかもしれません。</p>
+           <p class="note">それは問題ありません。気づいたら、静かに呼吸へ注意を戻してください。</p>`),
+        instructionTrial(3, `呼吸を1から${target}まで数えます`,
+          `<p><strong>吸って吐くひとまとまり</strong>を「1カウント」とし、心の中で数えます。${target}まで数えたら、また1から繰り返してください。</p>
+           <p><kbd>←</kbd> 呼吸1〜${target - 1}（人差し指）　<kbd>→</kbd> 呼吸${target}（薬指）</p>
+           <p class="note">各呼吸ごとに、キーを1回押します。</p>`),
+        instructionTrial(4, "カウントを忘れたとき",
+          `<p>カウントを忘れたことに気づいたら、左手の人差し指で <kbd>Space</kbd> を押してください。</p>
+           <p class="note">次の呼吸を「1」として再開します。指を使って数えず、カウントは心の中だけで行ってください。</p>`),
+        instructionTrial(5, "準備ができたら始めます",
+          `<p>背すじを起こし、リラックスした楽な姿勢で座ってください。目は少なくとも部分的に開け、画面上に休ませておきます。</p>
+           <p class="note">約<strong>${config.total_breath_count_target}回</strong>で終了します。途中、約<strong>${config.illusion_interval_count}回</strong>ごとに錯視課題が表示されます。</p>`, true)
+      ];
+    }
+
+    // ------------------------------------------------------------
+    // 3. 呼吸カウントの記録
+    // ------------------------------------------------------------
+    function responseCode(key) {
+      if (key === KEYS.normal) return 1;
+      if (key === KEYS.target) return 2;
+      if (key === KEYS.lost) return 3;
+      return null;
+    }
+
+    function responseLabel(code) {
+      return ({ 1: "count_1_to_8", 2: "count_9", 3: "loss_of_count" })[code] || "unknown";
+    }
+
+    function recordKey(key, blockNumber) {
+      const code = responseCode(key);
+      const previous = rawEvents.at(-1);
+      rawEvents.push({
+        press_no: rawEvents.length + 1,
+        time_s: elapsedSeconds(),
+        resp_code: code,
+        resp_label: responseLabel(code),
+        key,
+        count: previous && previous.resp_code === 1 ? previous.count + 1 : 1,
+        block_no: blockNumber,
+        wall_time_iso: new Date().toISOString()
+      });
+    }
+
+    function removeKeyHandler() {
+      if (!keyHandler) return;
+      document.removeEventListener("keydown", keyHandler, true);
+      keyHandler = null;
+    }
+
+    function breathCount() {
+      return rawEvents.filter((event) => event.resp_code === 1 || event.resp_code === 2).length;
+    }
+
+    // 1回の矢印キー入力を、1呼吸として記録する。
+    // Spaceキーの場合は「カウントを忘れた」と記録し、同じ試行を繰り返す。
+    function breathTrial(blockNumber, breathNumber) {
+      return {
+        timeline: [{
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: '<div class="blank"></div>',
+          choices: ["ArrowLeft", "ArrowRight", " "],
+          data: {
+            trial_type_custom: "bct_breath",
+            block_no: blockNumber,
+            breath_no_in_block: breathNumber
+          },
+          on_finish(data) {
+            const key = normalizeKey(data.response);
+            recordKey(key, blockNumber);
+            data.response_code = responseCode(key);
+            data.total_breath_count_so_far = breathCount();
+            data.elapsed_task_time_s = elapsedSeconds();
+          }
+        }],
+        loop_function(data) {
+          const lastResponse = data.values().at(-1).response;
+          return normalizeKey(lastResponse) === "Space";
+        },
+      };
+    }
+
+    function bctBlockTrial(numberOfBreaths, blockNumber) {
+      return {
+        timeline: Array.from(
+          { length: numberOfBreaths },
+          (_, index) => breathTrial(blockNumber, index + 1)
+        )
+      };
+    }
+
+    // ------------------------------------------------------------
+    // 4. ミュラー・リヤー錯視
+    // ------------------------------------------------------------
+    function illusionTrial(blockNumber) {
+      let startLength;
+      let finalLength;
+      let finalColor;
+      const criterionLength = 300;
+      const arrowAngle = Math.PI / 4;
+      const responseAngle = -Math.PI / 12;
+
+      return {
+        type: jsPsychHtmlKeyboardResponse,
+        choices: [" "],
+        stimulus: `<div class="illusion">
+          <h2>ミュラー・リヤー錯視</h2>
+          <canvas id="illusion-canvas" width="600" height="240"></canvas>
+          <div class="controls">
+            <div class="control"><label>色</label><input id="line-color" type="color" value="#000000"><output id="color-value">#000000</output></div>
+            <div class="control"><label>回答線の長さ</label><input id="line-length" type="range" min="50" max="450" step="1"><output id="length-value"></output></div>
+            <p>上側の斜めの回答線を、下側の基準刺激の横線と同じ長さになるよう調整してください。</p>
+            <p style="text-align:center"><strong>Spaceキーを押してBCTに戻る</strong></p>
+          </div>
+        </div>`,
+        data: { trial_type_custom: "muller_lyer_illusion", block_no: blockNumber },
+        on_load() {
+          const canvas = $("illusion-canvas");
+          const context = canvas.getContext("2d");
+          const color = $("line-color");
+          const slider = $("line-length");
+          const startLengths = [150, 200, 250, 300, 350];
+          startLength = startLengths[Math.floor(Math.random() * startLengths.length)];
+          slider.value = startLength;
+
+          const arrowLength = 70;
+
+          function draw() {
+            const responseLength = Number(slider.value);
+            finalLength = responseLength;
+            finalColor = color.value;
+            const centerX = canvas.width / 2;
+            const dx = responseLength / 2 * Math.cos(responseAngle);
+            const dy = responseLength / 2 * Math.sin(responseAngle);
+            const x1 = centerX - criterionLength / 2;
+            const x2 = centerX + criterionLength / 2;
+            const arrowX = arrowLength * Math.cos(arrowAngle);
+            const arrowY = arrowLength * Math.sin(arrowAngle);
+
+            $("color-value").textContent = color.value;
+            $("length-value").textContent = `${responseLength} px`;
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.fillStyle = "#ddd";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.strokeStyle = color.value;
+            context.lineWidth = 5;
+            context.lineCap = "round";
+            context.beginPath();
+            context.moveTo(centerX - dx, 65 - dy);
+            context.lineTo(centerX + dx, 65 + dy);
+            context.moveTo(x1, 165); context.lineTo(x2, 165);
+            context.moveTo(x1, 165); context.lineTo(x1 - arrowX, 165 - arrowY);
+            context.moveTo(x1, 165); context.lineTo(x1 - arrowX, 165 + arrowY);
+            context.moveTo(x2, 165); context.lineTo(x2 + arrowX, 165 - arrowY);
+            context.moveTo(x2, 165); context.lineTo(x2 + arrowX, 165 + arrowY);
+            context.stroke();
+          }
+
+          color.addEventListener("input", draw);
+          slider.addEventListener("input", draw);
+          draw();
+        },
+        on_finish(data) {
+          const answer = {
+            illusion_no: illusionResponses.length + 1,
+            after_block_no: blockNumber,
+            elapsed_task_time_s: elapsedSeconds(),
+            illusion_type: "muller_lyer",
+            line_color: finalColor,
+            angle_rad: Number(arrowAngle.toFixed(6)),
+            angle_deg: 45,
+            response_start_length_px: startLength,
+            response_line_angle_rad: Number(responseAngle.toFixed(6)),
+            response_line_angle_deg: -15,
+            comparison_line_length_px: finalLength,
+            true_muller_line_length_px: criterionLength,
+            criterion_line_length_px: criterionLength,
+            criterion_arrow_angle_rad: Number(arrowAngle.toFixed(6)),
+            criterion_arrow_angle_deg: 45,
+            criterion_arrow_direction: "outward",
+            adjustment_error_px: finalLength - criterionLength,
+            yabane_visible: true,
+            wall_time_iso: new Date().toISOString()
+          };
+          illusionResponses.push(answer);
+          Object.assign(data, answer);
+        }
+      };
+    }
+
+    // ------------------------------------------------------------
+    // 5. BCTの集計（元ファイルと同じ判定）
+    // ------------------------------------------------------------
+    function calculateCycles() {
+      const boundaries = rawEvents
+        .map((event, index) => ({ event, index }))
+        .filter(({ event }) => event.resp_code === 2 || event.resp_code === 3);
+
+      const allCycles = boundaries.map(({ event, index }, cycleIndex) => {
+        const startIndex = cycleIndex === 0 ? 0 : boundaries[cycleIndex - 1].index + 1;
+        const numberOfPresses = index - startIndex + 1;
+        const previousTime = cycleIndex === 0 ? 0 : rawEvents[startIndex - 1].time_s;
+        const averageInterval = (event.time_s - previousTime) / numberOfPresses;
+        let resultCode;
+        let resultLabel;
+        if (event.resp_code === 3) { resultCode = 3; resultLabel = "reset_loss_of_count"; }
+        else if (numberOfPresses === config.cycle_target_count) { resultCode = 1; resultLabel = "accurate_count"; }
+        else { resultCode = 2; resultLabel = "miscount"; }
+        return {
+          cycle_no: cycleIndex + 1,
+          start_press_no: startIndex + 1,
+          end_press_no: index + 1,
+          n_presses: numberOfPresses,
+          termination_resp_code: event.resp_code,
+          termination_resp_label: responseLabel(event.resp_code),
+          termination_time_s: event.time_s,
+          avg_keypress_interval_s: Number(averageInterval.toFixed(6)),
+          bct_result_code: resultCode,
+          bct_result_label: resultLabel,
+          removed_single_response_cycle: false
+        };
+      });
+
+      const cutoff = rawEvents.length ? Math.max(...rawEvents.map((event) => event.time_s)) : 0;
+      const removed = allCycles.filter((cycle) => cycle.n_presses === 1 && cycle.avg_keypress_interval_s < cutoff);
+      const cycles = allCycles
+        .filter((cycle) => !(cycle.n_presses === 1 && cycle.avg_keypress_interval_s < cutoff))
+        .map((cycle, index) => ({ ...cycle, cycle_no: index + 1 }));
+
+      return {
+        cycles_all_before_single_removal: allCycles,
+        cycles,
+        singlesremoved: removed.length,
+        singlesremoved_detailed: removed,
+        totaltrials: cycles.length,
+        number_acc: cycles.filter((cycle) => cycle.bct_result_code === 1).length,
+        number_mis: cycles.filter((cycle) => cycle.bct_result_code === 2).length,
+        number_res: cycles.filter((cycle) => cycle.bct_result_code === 3).length,
+        manualcheck_required: 0,
+        cutoffthreshold_singletrial_s: cutoff
+      };
+    }
+
+    function finishTrial() {
+      return {
+        type: jsPsychHtmlKeyboardResponse,
+        data: {},
+        stimulus: '<div class="screen"><h1>課題は終了しました。<br><br>回答データを送信しています。</h1></div>',
+        choices: "NO_KEYS",
+        trial_duration: 1200,
+        on_start(trial) {
+          const summary = calculateCycles();
+          Object.assign(trial.data, {
+            trial_type_custom: "bct_complete_data",
+            experiment: "Breath-Counting Task",
+            implementation: "BCT with Muller-Lyer illusion, jsPsych 8.2.3",
+            task_start_wall_iso: taskStartISO,
+            task_end_wall_iso: new Date().toISOString(),
+            raw_events_json: JSON.stringify(rawEvents),
+            probe_responses_json: "[]",
+            illusion_responses_json: JSON.stringify(illusionResponses),
+            cycles_json: JSON.stringify(summary.cycles),
+            total_keypresses: rawEvents.length,
+            totaltrials: summary.totaltrials,
+            number_acc: summary.number_acc,
+            number_mis: summary.number_mis,
+            number_res: summary.number_res,
+            singlesremoved: summary.singlesremoved,
+            manualcheck_required: summary.manualcheck_required
+          });
+        }
+      };
+    }
+
+    // ------------------------------------------------------------
+    // 6. ローカル確認用の結果画面
+    // ------------------------------------------------------------
+    function showResults() {
+      const summary = calculateCycles();
+      const allData = jsPsych.data.get().values();
+      const illusionRows = illusionResponses.map((answer) =>
+        `<tr><td>${answer.illusion_no}</td><td>${answer.after_block_no * 5}</td><td>${answer.comparison_line_length_px} px</td><td>${answer.adjustment_error_px} px</td></tr>`
+      ).join("");
+
+      $("jspsych-target").innerHTML = `<section class="results"><div class="results-panel">
+        <h1>実験結果（ローカル確認）</h1>
+        <table><tbody>
+          <tr><th>参加者ID</th><td>${escapeHtml(config.participant_id)}</td></tr>
+          <tr><th>呼吸として記録された矢印キー入力</th><td>${breathCount()} 回</td></tr>
+          <tr><th>錯視課題の回答数</th><td>${illusionResponses.length} 回</td></tr>
+          <tr><th>正確な5カウントサイクル</th><td>${summary.number_acc}</td></tr>
+          <tr><th>誤カウントサイクル</th><td>${summary.number_mis}</td></tr>
+          <tr><th>カウント忘れ</th><td>${summary.number_res}</td></tr>
+        </tbody></table>
+
+        <h2>錯視課題の回答</h2>
+        <table><thead><tr><th>課題番号</th><th>提示時点</th><th>回答した長さ</th><th>基準との差</th></tr></thead>
+          <tbody>${illusionRows}</tbody>
+        </table>
+        <p>この画面は動作確認用です。Cognition.run上では、同じ値がjsPsychの試行データとして保存されます。</p>
+        <button id="download-results" class="download-button">全結果をJSONで保存</button>
+      </div></section>`;
+
+      $("download-results").addEventListener("click", () => {
+        const result = {
+          config,
+          summary,
+          raw_events: rawEvents,
+          illusion_responses: illusionResponses,
+          jspsych_data: allData
+        };
+        const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `BCT_${config.participant_id}_results.json`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      })[character]);
+    }
+
+    // ------------------------------------------------------------
+    // 7. タイムラインを組み立てる
+    // ------------------------------------------------------------
+    function buildTimeline() {
+      const timeline = [...instructionTrials()];
+
+      timeline.push({
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: '<div class="blank"></div>', choices: "NO_KEYS", trial_duration: 1,
+        on_start() { rawEvents = []; illusionResponses = []; taskStartTime = performance.now(); taskStartISO = new Date().toISOString(); }
+      });
+
+      let remaining = config.total_breath_count_target;
+      let block = 1;
+      while (remaining > 0) {
+        const size = Math.min(config.illusion_interval_count, remaining);
+        timeline.push(bctBlockTrial(size, block));
+        remaining -= size;
+        // 5、10、15、20カウント後に錯視課題を行う。
+        timeline.push(illusionTrial(block));
+        block += 1;
+      }
+      timeline.push(finishTrial());
+      return timeline;
+    }
+
+    function startExperiment() {
+      config.participant_id = $("participant-id").value.trim() || "anonymous";
+      $("start-screen").hidden = true;
+
+      jsPsych = initJsPsych({
+        display_element: "jspsych-target",
+        on_finish() {
+          removeKeyHandler();
+          showResults();
+        }
+      });
+
+      // Cognition.runはjsPsychの各試行データを自動保存する。
+      jsPsych.data.addProperties({
+        participant_id: config.participant_id,
+        savecode: config.savecode,
+        total_breath_count_target: config.total_breath_count_target,
+        illusion_interval_count: config.illusion_interval_count,
+        cycle_target_count: config.cycle_target_count,
+        platform: "cognition.run"
+      });
+      jsPsych.run(buildTimeline());
+    }
+
+    $("start-button").addEventListener("click", startExperiment);
+  </script>
+</body>
+</html>
