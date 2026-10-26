@@ -492,8 +492,8 @@
         <label for="illusion-interval-count">錯視提示間隔（呼吸回数）</label>
         <input id="illusion-interval-count" type="number" min="1" step="1" value="5" />
 
-        <label for="cycle-target-count">右矢印を押す回数（錯視提示間隔と連動）</label>
-        <input id="cycle-target-count" type="number" min="1" step="1" value="5" readonly />
+        <label for="cycle-target-count">右矢印を押す回数（初期値は錯視提示間隔と連動・変更可）</label>
+        <input id="cycle-target-count" type="number" min="1" step="1" value="5" />
 
         <label for="sync-countdown">開始前カウントダウン</label>
         <div class="checkbox-row">
@@ -510,8 +510,8 @@
 
       <div class="key-map">
         <strong>キー割り当て</strong><br>
-        呼吸カウント 1〜「錯視提示間隔−1」：左矢印キー（←）<br>
-        錯視提示間隔の回数目の呼吸：右矢印キー（→）（間隔が1回なら毎回）<br>
+        呼吸カウント 1〜「右矢印を押す回数−1」：左矢印キー（←）<br>
+        設定した回数目の呼吸：右矢印キー（→）（1回なら毎回）<br>
         カウントを忘れた場合：Spaceキー<br>
       </div>
 
@@ -604,7 +604,7 @@
         savecode: document.getElementById('save-code').value.trim() || 'BCT',
         total_breath_count_target: safeInteger(document.getElementById('total-breath-count-target').value, 20, 1),
         illusion_interval_count: safeInteger(document.getElementById('illusion-interval-count').value, 5, 1),
-        cycle_target_count: safeInteger(document.getElementById('illusion-interval-count').value, 5, 1),
+        cycle_target_count: safeInteger(document.getElementById('cycle-target-count').value, 5, 1),
         sync_countdown: document.getElementById('sync-countdown').checked,
         use_fullscreen: document.getElementById('use-fullscreen').checked,
         keys: KEY_CONFIG,
@@ -619,6 +619,11 @@
       const savecode = params.get('savecode');
       const totalCount = params.get('total_count') || params.get('total_breath_count_target') || params.get('duration') || params.get('duration_min');
       const interval = params.get('interval') || params.get('illusion_interval') || params.get('illusion_interval_count') || params.get('illusion_interval_sec');
+      const cycleTarget = params.get('cycle') || params.get('cycle_target') || params.get('cycle_target_count') || params.get('target_count');
+      if (cycleTarget) {
+        document.getElementById('cycle-target-count').value = safeInteger(cycleTarget, 5, 1);
+        cycleTargetManuallySet = true;
+      }
       const sync = params.get('sync') || params.get('sync_countdown');
 
       if (participant) document.getElementById('participant-id').value = participant;
@@ -739,7 +744,7 @@
       const leftKey = keyLabel(config.keys.count18);
       const rightKey = keyLabel(config.keys.count9);
       const spaceKey = keyLabel(config.keys.loss);
-      const targetCount = config.illusion_interval_count || 5;
+      const targetCount = config.cycle_target_count || 5;
       const leftRangeText = targetCount > 2 ? `1〜${targetCount - 1}` : '1';
       return [
         {
@@ -1469,10 +1474,14 @@
       jsPsych.run(buildTimeline(currentConfig));
     }
 
+    let cycleTargetManuallySet = false;
+
     function syncCycleTargetToInterval() {
+      if (cycleTargetManuallySet) return;
       document.getElementById('cycle-target-count').value = safeInteger(document.getElementById('illusion-interval-count').value, 5, 1);
     }
 
+    document.getElementById('cycle-target-count').addEventListener('input', () => { cycleTargetManuallySet = true; });
     applyQueryParamsToForm();
     syncCycleTargetToInterval();
     document.getElementById('illusion-interval-count').addEventListener('input', syncCycleTargetToInterval);
