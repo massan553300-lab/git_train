@@ -492,8 +492,8 @@
         <label for="illusion-interval-count">錯視提示間隔（呼吸回数）</label>
         <input id="illusion-interval-count" type="number" min="1" step="1" value="5" />
 
-        <label for="cycle-target-count">右矢印を押す回数</label>
-        <input id="cycle-target-count" type="number" min="2" step="1" value="9" />
+        <label for="cycle-target-count">右矢印を押す回数（錯視提示間隔と連動）</label>
+        <input id="cycle-target-count" type="number" min="1" step="1" value="5" readonly />
 
         <label for="sync-countdown">開始前カウントダウン</label>
         <div class="checkbox-row">
@@ -510,12 +510,12 @@
 
       <div class="key-map">
         <strong>キー割り当て</strong><br>
-        呼吸カウント 1〜「設定した回数−1」：左矢印キー（←）<br>
-        設定した回数の呼吸：右矢印キー（→）<br>
+        呼吸カウント 1〜「錯視提示間隔−1」：左矢印キー（←）<br>
+        錯視提示間隔の回数目の呼吸：右矢印キー（→）（間隔が1回なら毎回）<br>
         カウントを忘れた場合：Spaceキー<br>
       </div>
 
-      <p class="note">URLクエリでも設定できます：<code>?participant_id=S001&amp;savecode=PROJECT&amp;total_count=20&amp;interval=5&amp;cycle=9&amp;sync=1</code></p>
+      <p class="note">URLクエリでも設定できます：<code>?participant_id=S001&amp;savecode=PROJECT&amp;total_count=20&amp;interval=5&amp;sync=1</code></p>
       <button id="start-experiment" class="start-button">実験を開始する</button>
     </div>
   </div>
@@ -604,7 +604,7 @@
         savecode: document.getElementById('save-code').value.trim() || 'BCT',
         total_breath_count_target: safeInteger(document.getElementById('total-breath-count-target').value, 20, 1),
         illusion_interval_count: safeInteger(document.getElementById('illusion-interval-count').value, 5, 1),
-        cycle_target_count: safeInteger(document.getElementById('cycle-target-count').value, 9, 2),
+        cycle_target_count: safeInteger(document.getElementById('illusion-interval-count').value, 5, 1),
         sync_countdown: document.getElementById('sync-countdown').checked,
         use_fullscreen: document.getElementById('use-fullscreen').checked,
         keys: KEY_CONFIG,
@@ -619,14 +619,12 @@
       const savecode = params.get('savecode');
       const totalCount = params.get('total_count') || params.get('total_breath_count_target') || params.get('duration') || params.get('duration_min');
       const interval = params.get('interval') || params.get('illusion_interval') || params.get('illusion_interval_count') || params.get('illusion_interval_sec');
-      const cycleTarget = params.get('cycle') || params.get('cycle_target') || params.get('cycle_target_count') || params.get('target_count');
       const sync = params.get('sync') || params.get('sync_countdown');
 
       if (participant) document.getElementById('participant-id').value = participant;
       if (savecode) document.getElementById('save-code').value = savecode;
       if (totalCount) document.getElementById('total-breath-count-target').value = totalCount;
       if (interval) document.getElementById('illusion-interval-count').value = interval;
-      if (cycleTarget) document.getElementById('cycle-target-count').value = cycleTarget;
       if (sync !== null) document.getElementById('sync-countdown').checked = ['1', 'true', 'yes', 'on'].includes(sync.toLowerCase());
     }
 
@@ -741,7 +739,7 @@
       const leftKey = keyLabel(config.keys.count18);
       const rightKey = keyLabel(config.keys.count9);
       const spaceKey = keyLabel(config.keys.loss);
-      const targetCount = config.cycle_target_count || 9;
+      const targetCount = config.illusion_interval_count || 5;
       const leftRangeText = targetCount > 2 ? `1〜${targetCount - 1}` : '1';
       return [
         {
@@ -756,7 +754,7 @@
         },
         {
           title: `呼吸を1から${targetCount}まで数えます`,
-          body: `<p><strong>吸って吐くひとまとまり</strong>を「1カウント」とし、心の中で数えます。${targetCount}まで数えたら、また1から繰り返してください。</p><p>注意の大部分は、呼吸の感覚に向けたままにします。</p><div class="instruction-keys"><div class="instruction-key-row"><span class="keycap">${leftKey}</span>呼吸 ${leftRangeText}<br><small>人差し指で押す</small></div><div class="instruction-key-row"><span class="keycap">${rightKey}</span>呼吸 ${targetCount}<br><small>薬指で押す</small></div></div><p class="instruction-note">各呼吸ごとに、キーを1回押します。</p>`,
+          body: `<p><strong>吸って吐くひとまとまり</strong>を「1カウント」とし、心の中で数えます。${targetCount}まで数えたら、また1から繰り返してください。</p><p>注意の大部分は、呼吸の感覚に向けたままにします。</p><div class="instruction-keys">${targetCount > 1 ? `<div class="instruction-key-row"><span class="keycap">${leftKey}</span>呼吸 ${leftRangeText}<br><small>人差し指で押す</small></div>` : ''}<div class="instruction-key-row"><span class="keycap">${rightKey}</span>呼吸 ${targetCount}<br><small>薬指で押す</small></div></div><p class="instruction-note">各呼吸ごとに、キーを1回押します。</p>`,
           action: `<span class="keycap">${rightKey}</span>次へ`
         },
         {
@@ -1151,7 +1149,7 @@
         savecode: result.config.savecode,
         total_breath_count_target: result.config.total_breath_count_target,
         illusion_interval_count: result.config.illusion_interval_count || 5,
-        cycle_target_count: result.config.cycle_target_count || 9,
+        cycle_target_count: result.config.cycle_target_count || 5,
         task_start_wall_iso: result.task_start_wall_iso,
         probe_no: p.probe_no,
         after_block_no: p.after_block_no,
@@ -1170,7 +1168,7 @@
         savecode: result.config.savecode,
         total_breath_count_target: result.config.total_breath_count_target,
         illusion_interval_count: result.config.illusion_interval_count || 5,
-        cycle_target_count: result.config.cycle_target_count || 9,
+        cycle_target_count: result.config.cycle_target_count || 5,
         task_start_wall_iso: result.task_start_wall_iso,
         illusion_no: p.illusion_no,
         after_block_no: p.after_block_no,
@@ -1200,7 +1198,7 @@
         savecode: result.config.savecode,
         total_breath_count_target: result.config.total_breath_count_target,
         illusion_interval_count: result.config.illusion_interval_count || 5,
-        cycle_target_count: result.config.cycle_target_count || 9,
+        cycle_target_count: result.config.cycle_target_count || 5,
         task_start_wall_iso: result.task_start_wall_iso,
         press_no: e.press_no,
         time_s: e.time_s,
@@ -1218,7 +1216,7 @@
         savecode: result.config.savecode,
         total_breath_count_target: result.config.total_breath_count_target,
         illusion_interval_count: result.config.illusion_interval_count || 5,
-        cycle_target_count: result.config.cycle_target_count || 9,
+        cycle_target_count: result.config.cycle_target_count || 5,
         task_start_wall_iso: result.task_start_wall_iso,
         cycle_no: c.cycle_no,
         start_press_no: c.start_press_no,
@@ -1237,7 +1235,7 @@
       teardownTaskKeyListener();
       document.body.classList.remove('task-running');
 
-      const output = computeCycles(bctRawEvents, config.cycle_target_count || 9);
+      const output = computeCycles(bctRawEvents, config.cycle_target_count || 5);
       const taskEndWallISO = new Date().toISOString();
       bctResult = {
         experiment: 'Breath-Counting Task',
@@ -1266,7 +1264,7 @@
       data.savecode = config.savecode;
       data.total_breath_count_target = config.total_breath_count_target;
       data.illusion_interval_count = config.illusion_interval_count;
-      data.cycle_target_count = config.cycle_target_count || 9;
+      data.cycle_target_count = config.cycle_target_count || 5;
       data.raw_events_json = JSON.stringify(bctRawEvents);
       data.probe_responses_json = JSON.stringify(bctProbeResponses);
       data.illusion_responses_json = JSON.stringify(bctIllusionResponses);
@@ -1389,7 +1387,7 @@
                 <tr><th>保存コード</th><td>${escapeHTML(result.config.savecode)}</td></tr>
                 <tr><th>総カウント数</th><td>${result.config.total_breath_count_target || 20}回</td></tr>
                 <tr><th>錯視提示間隔</th><td>${result.config.illusion_interval_count || 5}カウントごと</td></tr>
-                <tr><th>右矢印を押す回数</th><td>${result.config.cycle_target_count || 9}回目</td></tr>
+                <tr><th>右矢印を押す回数</th><td>${result.config.cycle_target_count || 5}回目</td></tr>
                 <tr><th>総キー押し数</th><td>${result.raw_events.length}</td></tr>
                 <tr><th>サイクル数</th><td>${result.output.totaltrials}</td></tr>
                 <tr><th>正確な設定カウント</th><td>${result.output.number_acc}</td></tr>
@@ -1471,7 +1469,13 @@
       jsPsych.run(buildTimeline(currentConfig));
     }
 
+    function syncCycleTargetToInterval() {
+      document.getElementById('cycle-target-count').value = safeInteger(document.getElementById('illusion-interval-count').value, 5, 1);
+    }
+
     applyQueryParamsToForm();
+    syncCycleTargetToInterval();
+    document.getElementById('illusion-interval-count').addEventListener('input', syncCycleTargetToInterval);
     document.getElementById('start-experiment').addEventListener('click', startExperiment);
   </script>
 </body>
